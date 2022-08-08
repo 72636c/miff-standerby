@@ -1,0 +1,77 @@
+service: miff-standerby
+
+configValidationMode: error
+
+params:
+  default:
+    description: Stands by in a MIFF queue
+
+custom:
+  prune:
+    automatic: true
+    number: 3
+
+plugins:
+  - serverless-plugin-canary-deployments
+  - serverless-prune-plugin
+
+provider:
+  logRetentionInDays: 30
+  name: aws
+  region: ap-southeast-2
+  runtime: nodejs16.x
+  architecture: arm64
+  deploymentMethod: direct
+  stackName: ${self:service}
+  stage: ${env:ENVIRONMENT}
+  deploymentBucket:
+    # Use a shared account-level bucket for Lambda bundles and other artefacts.
+    # This is easier to manage in terms of access, deployment, and tagging.
+    name: ${ssm:/test/artefacts/bucket-name}
+  environment:
+    # https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/node-reusing-connections.html
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+    NODE_ENV: production
+    # https://nodejs.org/api/cli.html#cli_node_options_options
+    NODE_OPTIONS: --enable-source-maps
+  iam:
+    role:
+      statements:
+        - Action: lambda:InvokeFunction
+          Effect: Allow
+          Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${self:functions.Worker.name}
+
+package:
+  patterns:
+    - '!**'
+    - lib/**
+    - node_modules/**
+
+functions:
+  Worker:
+    name: ${self:service}
+    handler: lib/app.handler
+    description: ${param:description}
+    memorySize: 128
+    reservedConcurrency: 3
+    timeout: 30
+    deploymentSettings:
+      type: AllAtOnce
+      alias: Live
+      preTrafficHook: WorkerPreHook
+    environment:
+      VERSION: ${env:VERSION, 'local'}
+    events:
+      - schedule: rate(1 minute)
+  WorkerPreHook:
+    name: ${self:functions.Worker.name}-pre-hook
+    handler: lib/hooks.pre
+    memorySize: 128
+    # This is generous because a timeout will hang the deployment
+    timeout: 300
+    environment:
+      FUNCTION_NAME_TO_INVOKE: ${self:functions.Worker.name}
+
+resources:
+  # This becomes the Lambda application's description
+  Description: ${param:description}

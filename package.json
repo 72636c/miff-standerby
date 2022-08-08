@@ -5,6 +5,9 @@
   },
   "devDependencies": {
     "@types/node": "^16.11.47",
+    "serverless": "^3.21.0",
+    "serverless-plugin-canary-deployments": "^0.8.0",
+    "serverless-prune-plugin": "^2.0.1",
     "skuba": "^4.3.1"
   },
   "engines": {
